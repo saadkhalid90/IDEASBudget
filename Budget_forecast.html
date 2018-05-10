@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <style>
+    body { margin:0;position:fixed;top:0;right:0;bottom:0;left:0; }
+
+    .axis line {
+      stroke: none;
+    }
+  </style>
+</head>
+
+<body>
+  <script>
+
+    d3.csv('_Revenue_.csv', function(wide_data){
+      var long_data = []
+      wide_data.forEach(function(row){
+        Object.keys(row).forEach( function(colname) {
+          // Ignore 'State' and 'Value' columns
+          if(colname == "Head" || colname == "Type") {
+            return
+          }
+          long_data.push({"Head": row["Head"], "Type": row["Type"], "Value": row[colname], "Year": colname});
+        });
+
+      })
+      //console.log(long_data);
+
+      var nest = d3.nest()
+        .key(function(d) { return d["Year"] }) // sort by key
+        .rollup(function(s) { // do this to each grouping
+          // reduce takes a list and returns one value
+          // in this case, the list is all the grouped elements
+          // and the final value is an object with keys
+          return s.reduce(function(prev, curr) {
+            prev["Year"] = curr["Year"];
+            prev[curr["Head"]] = +curr["Value"];
+            return prev;
+          }, {});
+        })
+
+      var wide = nest.entries(long_data) // tell it what data to process
+                    .map(function(d) { // pull out only the values
+                      return d.value;
+                    });
+      //})
+
+      //console.log(wide);
+
+      // draw the area chart now
+
+      // defining the margins and the dimensions of chart
+      var margin = {top: 20, right: 60, bottom: 30, left: 50},
+      width = 600 - margin.left - margin.right,
+      height = 350 - margin.top - margin.bottom;
+
+      // time format for year
+      var parseDate = d3.timeParse('%Y');
+
+      // defining x and y scales
+      var x = d3.scaleTime()
+                .range([0, width]);
+
+      var y = d3.scaleLinear()
+        .range([height, 0]);
+      // color scale for categories
+      var color = d3.scaleOrdinal(d3.schemeCategory20);
+
+      // defining the axes
+      var xAxis = d3.axisBottom()
+                    .scale(x);
+
+      var yAxis = d3.axisRight()
+                    .scale(y)
+
+      var area = d3.area()
+                    .x(function(d) {
+                      return x(d.data.Year);
+                    })
+                    .y0(function(d) { return y(d[0]); })
+                    .y1(function(d) { return y(d[1]); });
+
+      var stack = d3.stack()
+
+      var svg = d3.select('body').append('svg')
+                  .attr('width', width + margin.left + margin.right)
+                  .attr('height', height + margin.top + margin.bottom)
+                  .append('g')
+                  .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
+
+      //console.log(d3.keys(wide[0]));
+
+      color.domain(d3.keys(wide[0]).filter(function(key) { return key !== 'Year'; }));
+      var keys = d3.keys(wide[0]).filter(function(key) { return key !== 'Year'; })
+      // parsing time variable of all years
+      wide.forEach(function(d) {
+        d.Year = parseDate(d.Year);
+      });
+
+      var maxDateVal = d3.max(wide, function(d){
+        var vals = d3.keys(d).map(function(key){ return key !== 'Year' ? d[key] : 0 });
+        return d3.sum(vals);
+      });
+
+      //console.log(maxDateVal);
+
+      // Set domains for axes
+      x.domain(d3.extent(wide, function(d) { return d.Year; }));
+      y.domain([0, maxDateVal])
+
+      stack.keys(keys);
+
+      stack.order(d3.stackOrderNone);
+      stack.offset(d3.stackOffsetNone);
+
+      //console.log(wide);
+      //console.log(d3.keys(wide[0]));
+
+      var field = d3.keys(wide[0])[1];
+      console.log(field);
+      //
+      var wide_show = wide.map(function(d){
+        d_copy = Object.assign({}, d)
+        for (i in d3.keys(d_copy)){
+          if (d3.keys(d_copy)[i] != "Year" && d3.keys(d_copy)[i] != field){
+            d_copy[d3.keys(d_copy)[i]] = 0;
+          }
+        }
+        return d_copy;
+      })
+
+      console.log(wide_show)
+
+      //console.log(wide);
+
+      //console.log(stack(wide));
+
+
+
+      var browser = svg.selectAll('.browser')
+                        .data(stack(wide))
+                          .enter().append('g')
+                        .attr('class', function(d){ return 'browser ' + d.key; })
+                        .attr('fill-opacity', 0.85);
+
+      browser.append('path')
+             .attr('class', 'area')
+             .attr('d', area)
+             .style('fill', function(d) { return color(d.key); })
+             .attr('id', function(d) { return d.key })
+             .classed("layer", true)
+             .style('fill-opacity', 0.85)
+             // .style('stroke', function(d) { return color(d.key); })
+             // .style('stroke-width', 0.1);
+
+      svg.append('g')
+           .attr('class', 'x axis')
+           .attr('transform', 'translate(0,' + height + ')')
+           .call(xAxis);
+
+      svg.append('g')
+           .attr('class', 'y axis')
+           .attr('transform', 'translate(' + width + ', 0)')
+           .call(yAxis);
+
+    var USER_HEAD = null;
+
+           // Click layer.
+     svg.selectAll(".layer").on("click", function(d,i) {
+         if (USER_HEAD === null) {
+             USER_HEAD = d3.select(this).attr("id");
+         } else {
+             USER_HEAD = null;
+         }
+
+         update();
+     });
+
+     function update(){
+        var upd_data = [];
+        console.log(USER_HEAD);
+        if (USER_HEAD != null){
+
+
+          var wide_show = wide.map(function(d){
+            d_copy = Object.assign({}, d)
+            for (i in d3.keys(d_copy)){
+              if (d3.keys(d_copy)[i] != "Year" && d3.keys(d_copy)[i] != USER_HEAD){
+                d_copy[d3.keys(d_copy)[i]] = 0;
+              }
+            }
+            return d_copy;
+          })
+
+          upd_data = stack(wide_show);
+          // updating the domain
+          y.domain([0, d3.max(wide_show.map(function(d){
+            return d[USER_HEAD];
+          }))]);
+        }
+        else {
+          upd_data = stack(wide);
+          y.domain([0, maxDateVal])
+        }
+        console.log(upd_data);
+
+        //transition in the area charts
+        d3.selectAll(".layer")
+          .data(upd_data);
+        d3.selectAll(".layer")
+          .transition()
+          .duration(1000)
+          .attr("d", area);
+
+        svg.select(".y.axis")
+          .transition()
+          .duration(1000)
+          .call(yAxis);
+
+
+     }
+
+})
+
+  </script>
+</body>
