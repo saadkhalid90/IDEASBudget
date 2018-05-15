@@ -8,6 +8,14 @@
     .axis line {
       stroke: none;
     }
+
+    .gridline line,
+    .gridline path {
+      stroke: grey;
+      stroke-width: 0.7;
+      stroke-dasharray: 5;
+      opacity: 0.5;
+    }
   </style>
 </head>
 
@@ -72,7 +80,16 @@
       var xAxis = d3.axisBottom()
                     .scale(x);
 
+      var xGridlines = d3.axisBottom()
+                         .scale(x)
+                         .tickSize(-height, 0, 0)
+                         .tickFormat("")
+
+
       var yAxis = d3.axisRight()
+                    .scale(y)
+
+      var yAxisLeft = d3.axisLeft()
                     .scale(y)
 
       var area = d3.area()
@@ -115,6 +132,26 @@
       stack.order(d3.stackOrderNone);
       stack.offset(d3.stackOffsetNone);
 
+      svg.append('g')
+           .attr('class', 'x axis')
+           .attr('transform', 'translate(0,' + height + ')')
+           .call(xAxis);
+
+      svg.append('g')
+           .attr('class', 'y axis')
+           .attr('transform', 'translate(' + width + ', 0)')
+           .call(yAxis);
+
+      svg.append('g')
+          .attr('class', 'y axis left')
+          //.attr('transform', 'translate(' + width + ', 0)')
+          .call(yAxisLeft);
+
+      svg.append('g')
+           .attr('class', 'x gridline')
+           .attr('transform', 'translate(0,' + height + ')')
+           .call(xGridlines);
+
       //console.log(wide);
       //console.log(d3.keys(wide[0]));
 
@@ -131,7 +168,7 @@
         return d_copy;
       })
 
-      console.log(wide_show)
+      //console.log(wide_show)
 
       //console.log(wide);
 
@@ -143,7 +180,7 @@
                         .data(stack(wide))
                           .enter().append('g')
                         .attr('class', function(d){ return 'browser ' + d.key; })
-                        .attr('fill-opacity', 0.85);
+                        //.attr('fill-opacity', 0.9);
 
       browser.append('path')
              .attr('class', 'area')
@@ -155,15 +192,67 @@
              // .style('stroke', function(d) { return color(d.key); })
              // .style('stroke-width', 0.1);
 
-      svg.append('g')
-           .attr('class', 'x axis')
-           .attr('transform', 'translate(0,' + height + ')')
-           .call(xAxis);
 
-      svg.append('g')
-           .attr('class', 'y axis')
-           .attr('transform', 'translate(' + width + ', 0)')
-           .call(yAxis);
+      //console.log(stack(wide));
+
+      var stack_wide = stack(wide);
+      var stack_long = []
+      console.log(stack_wide);
+
+      function longBubbles(wide_data){
+        var stack_long = []
+        wide_data.forEach(function(row){
+          var idx = 0
+          console.log(row.key);
+          row.forEach(function(entry, idx){
+            stack_long.push({
+              coord: [entry[0], entry[1]],
+              key: row.key,
+              index: row.index,
+              year: 2013 + idx
+            });
+            idx++
+          })
+        })
+        return stack_long;
+      }
+
+
+      // stack_wide.forEach(function(row){
+      //   var idx = 0
+      //   console.log(row.key);
+      //   row.forEach(function(entry, idx){
+      //     stack_long.push({
+      //       coord: [entry[0], entry[1]],
+      //       key: row.key,
+      //       index: row.index,
+      //       year: 2013 + idx
+      //     });
+      //     idx++
+      //   })
+      // })
+      stack_long = longBubbles(stack_wide);
+
+      console.log(stack_long);
+      // add points for each
+
+      svg.selectAll('circle')
+            .data(stack_long)
+            .enter()
+            .append('circle')
+            .attr('r', 2)
+            .attr('cx', function(d){
+              return x(parseDate(d['year']));
+            })
+            .attr('cy', function(d){
+              return y(d['coord'][1]);
+            })
+            .attr('opacity', 0.6)
+            .attr('class', function(d){
+              return d['year'];
+            })
+            .style('fill', 'grey');
+
 
     var USER_HEAD = null;
 
@@ -180,7 +269,7 @@
 
      function update(){
         var upd_data = [];
-        console.log(USER_HEAD);
+        //console.log(USER_HEAD);
         if (USER_HEAD != null){
 
 
@@ -195,30 +284,89 @@
           })
 
           upd_data = stack(wide_show);
+
+          var upd_long = longBubbles(upd_data);
           // updating the domain
           y.domain([0, d3.max(wide_show.map(function(d){
             return d[USER_HEAD];
           }))]);
+
+          d3.selectAll('circle')
+            .data(upd_long)
+            .transition()
+            .duration(1000)
+            .attr('cx', function(d){
+              return x(parseDate(d['year']));
+            })
+            .attr('cy', function(d){
+              return y(d['coord'][1]);
+            })
+            .attr('r', 3)
+            .style('opacity', function(d){
+              return d['key'] != USER_HEAD ? 0 : 1
+            })
+
         }
         else {
           upd_data = stack(wide);
+          upd_long = longBubbles(upd_data);
           y.domain([0, maxDateVal])
+
+          d3.selectAll('circle')
+            .data(upd_long)
+            .transition()
+            .duration(1000)
+            .attr('cx', function(d){
+              return x(parseDate(d['year']));
+            })
+            .attr('cy', function(d){
+              return y(d['coord'][1]);
+            })
+            .attr('r', 2)
+            .style('opacity', '0.6')
+
         }
-        console.log(upd_data);
+        //console.log(upd_data);
 
         //transition in the area charts
+
+
         d3.selectAll(".layer")
           .data(upd_data);
+
         d3.selectAll(".layer")
           .transition()
           .duration(1000)
-          .attr("d", area);
+          .attr("d", area)
+          .style("fill-opacity", function(d){
+            return USER_HEAD != null ? 0.5 : 0.85
+          })
+
 
         svg.select(".y.axis")
           .transition()
           .duration(1000)
           .call(yAxis);
 
+        svg.select(".y.axis.left")
+          .transition()
+          .duration(1000)
+          .call(yAxisLeft);
+
+        console.log(upd_long);
+        console.log(d3.selectAll('circle').data());
+
+        // d3.selectAll('circle')
+        //   .data(upd_long)
+        //   .transition()
+        //   .duration(1000)
+        //   .attr('cx', function(d){
+        //     return x(parseDate(d['year']));
+        //   })
+        //   .attr('cy', function(d){
+        //     return y(d['coord'][1]);
+        //   })
+        //   .attr('r', 3);
 
      }
 
