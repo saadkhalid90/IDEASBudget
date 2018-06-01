@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.js"></script>
+  <script src=textAnimate.js></script>
+
+  <style>
+    body { margin:0;position:fixed;top:0;right:0;bottom:0;left:0; }
+
+
+  </style>
+</head>
+
+<body>
+  <script>
+    d3.csv('Revenue_Exp.csv', function(Revenue_Exp){
+      console.log(Revenue_Exp);
+
+      // dimensions of the chart
+      var width = 620;
+      var height = 380;
+
+      var svg = d3.select('body')
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height);
+
+      nodes = Revenue_Exp
+
+      var all_numbers = [];
+
+      var color = d3.scaleOrdinal(d3.schemeCategory20b);
+
+      Revenue_Exp.columns.forEach(function(colname){
+        if (colname != 'Head' && colname != 'Type'){
+          temp = Revenue_Exp.map(d => +d[colname]);
+          all_numbers = all_numbers.concat(temp);
+        }
+      });
+
+      var max_number = d3.max(all_numbers);
+
+      var radiusScale = d3.scaleLinear()
+                          .domain([0, max_number])
+                          .range([0, (height/2) - 60])
+
+      var year = "2018";
+
+      var balance = 371.94;
+      var cash_reserves = 1268.1;
+
+      // defining the
+      var simulation = d3.forceSimulation(nodes)
+                      .force('charge', d3.forceManyBody().strength(0.4))
+                      //.force('center', d3.forceCenter(width / 2, height / 2))
+                      .force('x', d3.forceX().x(function(d) {
+                        return (d.Type == 'Revenues') ? width/4 : (3*width)/4
+                      }))
+                      .force('y', d3.forceY().y(height/2))
+                      .force('collision', d3.forceCollide().radius(function(d) {
+                        //return d.dummy_voteMargin;
+                        return radiusScale(d[year]) + 1;
+                      }))
+                      .on('tick', ticked);
+
+      svg.selectAll('circle')
+        .data(nodes)
+        .enter()
+        .append('circle')
+        .attr('r', d => radiusScale(d[year]))
+        .attr('cx', d => d.x)
+        .attr('cy', d => d.y)
+        //.style('fill', d => (d.Type == 'Revenues') ? 'Blue' : 'Red')
+        .style('fill', (d) => color(d.Head))
+        .style('opacity', 0.95);
+        //.style('stroke', 'black')
+        //.style('stroke-width', 2);
+
+      text_balance = svg.append('g')
+                .classed('balance_text_hold', true)
+                .attr('transform', 'translate('+ width/2 + ',' + (height - 28) +')')
+                .append('text')
+                .style('text-anchor', 'middle')
+                //.text('Fiscal Balance: ' + balance + ' billion PKR')
+                .style('font-size', '12px')
+                .style('font-family', 'sans-serif')
+      text_cash_res = svg.append('g')
+                .classed('cash_res_text_hold', true)
+                .attr('transform', 'translate('+ width/2 + ',' + (height - 10) +')')
+                .append('text')
+                .style('text-anchor', 'middle')
+                //.text('Fiscal Balance: ' + balance + ' billion PKR')
+                .style('font-size', '12px')
+                .style('font-family', 'sans-serif')
+
+      text_balance.append("svg:tspan").style("fill", "black").text('Fiscal Balance: ').classed('desc', true);
+      text_balance.append("svg:tspan").style("fill", (d) => (balance > 0) ? "blue" : "red" ).text("0").classed('amount', true);
+      text_balance.append("svg:tspan").style("fill", "black").text(' billion PKR').classed('currency', true);
+
+      text_cash_res.append("svg:tspan").style("fill", "black").text('Cash Reserves: ').classed('desc', true);
+      text_cash_res.append("svg:tspan").style("fill", (d) => (cash_reserves > 0) ? "blue" : "red" ).text("0").classed('amount', true);
+      text_cash_res.append("svg:tspan").style("fill", "black").text(' billion PKR').classed('currency', true);
+
+      interp_text_transit(".balance_text_hold .amount", 1500, balance);
+      interp_text_transit(".cash_res_text_hold .amount", 1500, cash_reserves);
+
+      svg.selectAll('circle')
+        .on('mouseover', function(d){
+          d3.select(this).transition('fadeIn')
+                        .duration(100)
+                        .style('opacity', 1)
+                        .style('stroke', 'black')
+                        .style('stroke-width', 2);
+        })
+        .on('mouseout', function(d){
+          d3.select(this).transition('fadeOut')
+                        .duration(100)
+                        .style('opacity', 0.95)
+                        .style('stroke', 'none');
+        })
+
+      function ticked() {
+          // update the x and y position of the bubbles
+          d3.selectAll("circle")
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y)
+      }
+
+
+    })
+  </script>
+</body>

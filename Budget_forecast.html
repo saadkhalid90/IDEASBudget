@@ -2,11 +2,19 @@
 <head>
   <meta charset="utf-8">
   <script src="https://d3js.org/d3.v4.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.js"></script>
   <style>
     body { margin:0;position:fixed;top:0;right:0;bottom:0;left:0; }
 
-    .axis line {
+    .y.axis line {
       stroke: none;
+    }
+
+    .y.axis.label {
+      text-anchor: middle;
+      font-family: sans-serif;
+      font-size: 12px;
+      fill: black;
     }
 
     .gridline line,
@@ -16,34 +24,42 @@
       stroke-dasharray: 5;
       opacity: 0.5;
     }
+
+    g.legendOrdinal text{
+      font-family: sans-serif;
+      font-size: 9px;
+    }
   </style>
 </head>
 
 <body>
   <script>
 
-    d3.csv('_Revenue_.csv', function(wide_data){
-      var long_data = []
-      wide_data.forEach(function(row){
+    function wide_to_long(wide_dataset){
+      // input data with years as separate columns
+      // converting to long data with just 'Year' as column
+      var long_data = [];
+      wide_dataset.forEach(function(row){
         Object.keys(row).forEach( function(colname) {
-          // Ignore 'State' and 'Value' columns
-          if(colname == "Head" || colname == "Type") {
-            return
+          // make a new row for each year in the long data
+          if(colname != "Head" && colname != "Type") {
+            long_data.push({"Head": row["Head"], "Type": row["Type"], "Value": row[colname], "Year": colname});
           }
-          long_data.push({"Head": row["Head"], "Type": row["Type"], "Value": row[colname], "Year": colname});
         });
-
       })
-      //console.log(long_data);
+      return long_data;
+    }
 
+    // adpated from
+    function long_to_wide(long_data, key){
       var nest = d3.nest()
-        .key(function(d) { return d["Year"] }) // sort by key
+        .key(function(d) { return d[key] }) // sort by key
         .rollup(function(s) { // do this to each grouping
           // reduce takes a list and returns one value
           // in this case, the list is all the grouped elements
           // and the final value is an object with keys
           return s.reduce(function(prev, curr) {
-            prev["Year"] = curr["Year"];
+            prev[key] = curr[key];
             prev[curr["Head"]] = +curr["Value"];
             return prev;
           }, {});
@@ -53,16 +69,55 @@
                     .map(function(d) { // pull out only the values
                       return d.value;
                     });
-      //})
+      return wide;
+    }
 
-      //console.log(wide);
+    function longBubbles(wide_data){
+      var stack_long = []
+      wide_data.forEach(function(row){
+        var idx = 0
+        //console.log(row.key);
+        row.forEach(function(entry, idx){
+          stack_long.push({
+            coord: [entry[0], entry[1]],
+            key: row.key,
+            index: row.index,
+            year: 2013 + idx
+          });
+          idx++
+        })
+      })
+      return stack_long;
+    }
 
-      // draw the area chart now
+    function wide_add_zeros(wide, USER_HEAD){
+      var wide_show = wide.map(function(d){
+        d_copy = Object.assign({}, d)
+        for (i in d3.keys(d_copy)){
+          if (d3.keys(d_copy)[i] != "Year" && d3.keys(d_copy)[i] != USER_HEAD){
+            d_copy[d3.keys(d_copy)[i]] = 0;
+          }
+        }
+        return d_copy;
+      })
+      return wide_show;
+    }
+
+
+
+    d3.csv('_Revenue_.csv', function(wide_data){
+
+      // converting wide to long with each year as a separate row
+      long_data = wide_to_long(wide_data);
+      // converting long again to wide byt now with heads as separate columns ("Year as key")
+      wide = long_to_wide(long_data, "Year")
+
+      // draw the area chart now (Initialize the chart)
 
       // defining the margins and the dimensions of chart
-      var margin = {top: 20, right: 60, bottom: 30, left: 50},
-      width = 600 - margin.left - margin.right,
-      height = 350 - margin.top - margin.bottom;
+      var margin = {top: 20, right: 60, bottom: 60, left: 70},
+      width = 620 - margin.left - margin.right,
+      height = 380 - margin.top - margin.bottom;
 
       // time format for year
       var parseDate = d3.timeParse('%Y');
@@ -76,22 +131,23 @@
       // color scale for categories
       var color = d3.scaleOrdinal(d3.schemeCategory20);
 
-      // defining the axes
+      // defining the axes (you call this axis function later within a group selection)
       var xAxis = d3.axisBottom()
                     .scale(x);
 
+      // gridlines to mark years
       var xGridlines = d3.axisBottom()
                          .scale(x)
                          .tickSize(-height, 0, 0)
                          .tickFormat("")
 
-
-      var yAxis = d3.axisRight()
+      var yAxisRight = d3.axisRight()
                     .scale(y)
 
       var yAxisLeft = d3.axisLeft()
                     .scale(y)
 
+      // definign the area layout
       var area = d3.area()
                     .x(function(d) {
                       return x(d.data.Year);
@@ -99,18 +155,23 @@
                     .y0(function(d) { return y(d[0]); })
                     .y1(function(d) { return y(d[1]); });
 
+      // initializing the stack (necessary for all stacked charts)
       var stack = d3.stack()
 
-      var svg = d3.select('body').append('svg')
+      // body > div > svg > g (transformed accroding to margins)
+      var svg = d3.select('body')
+                  .append('div')
+                  .classed('chart-contain', true)
+                  .append('svg')
                   .attr('width', width + margin.left + margin.right)
                   .attr('height', height + margin.top + margin.bottom)
                   .append('g')
                   .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
 
-      //console.log(d3.keys(wide[0]));
-
-      color.domain(d3.keys(wide[0]).filter(function(key) { return key !== 'Year'; }));
+      // getting all the heads of revenue
       var keys = d3.keys(wide[0]).filter(function(key) { return key !== 'Year'; })
+      color.domain(keys);
+
       // parsing time variable of all years
       wide.forEach(function(d) {
         d.Year = parseDate(d.Year);
@@ -121,67 +182,51 @@
         return d3.sum(vals);
       });
 
-      //console.log(maxDateVal);
-
       // Set domains for axes
       x.domain(d3.extent(wide, function(d) { return d.Year; }));
       y.domain([0, maxDateVal])
 
+      // d3 stack settings (you can initialize keys, also change the order of stacks and an offset)
       stack.keys(keys);
-
       stack.order(d3.stackOrderNone);
       stack.offset(d3.stackOffsetNone);
+
+      // append groups in the chart (for axes and gridlines)
 
       svg.append('g')
            .attr('class', 'x axis')
            .attr('transform', 'translate(0,' + height + ')')
-           .call(xAxis);
+           .call(xAxis)
 
       svg.append('g')
            .attr('class', 'y axis')
            .attr('transform', 'translate(' + width + ', 0)')
-           .call(yAxis);
+           .call(yAxisRight)
 
       svg.append('g')
           .attr('class', 'y axis left')
-          //.attr('transform', 'translate(' + width + ', 0)')
-          .call(yAxisLeft);
+          .call(yAxisLeft)
+          .append('text')
+          // appending the axes labels
+          .text("Revenue (in billion PKR)")
+          .classed('y axis label', true)
+          .attr('transform', 'translate(-50,' + height/2 + ') rotate(270)')
 
       svg.append('g')
            .attr('class', 'x gridline')
            .attr('transform', 'translate(0,' + height + ')')
            .call(xGridlines);
 
-      //console.log(wide);
-      //console.log(d3.keys(wide[0]));
-
-      var field = d3.keys(wide[0])[1];
-      console.log(field);
-      //
-      var wide_show = wide.map(function(d){
-        d_copy = Object.assign({}, d)
-        for (i in d3.keys(d_copy)){
-          if (d3.keys(d_copy)[i] != "Year" && d3.keys(d_copy)[i] != field){
-            d_copy[d3.keys(d_copy)[i]] = 0;
-          }
-        }
-        return d_copy;
-      })
-
-      //console.log(wide_show)
-
-      //console.log(wide);
-
-      //console.log(stack(wide));
-
-
-
+      // groups to hold paths for area chart
+      // browser is the selction with all groups
       var browser = svg.selectAll('.browser')
                         .data(stack(wide))
                           .enter().append('g')
                         .attr('class', function(d){ return 'browser ' + d.key; })
-                        //.attr('fill-opacity', 0.9);
 
+
+      // append paths to the groups using area layout
+      // make the id of each path the name of the head
       browser.append('path')
              .attr('class', 'area')
              .attr('d', area)
@@ -189,58 +234,26 @@
              .attr('id', function(d) { return d.key })
              .classed("layer", true)
              .style('fill-opacity', 0.85)
-             // .style('stroke', function(d) { return color(d.key); })
-             // .style('stroke-width', 0.1);
 
 
-      //console.log(stack(wide));
+      // now generating data for bubbles
+      // stack wide to get the stacked coordinates of bubbles
+      // but to work with bubbles, tuning it into long format
 
       var stack_wide = stack(wide);
       var stack_long = []
-      console.log(stack_wide);
 
-      function longBubbles(wide_data){
-        var stack_long = []
-        wide_data.forEach(function(row){
-          var idx = 0
-          console.log(row.key);
-          row.forEach(function(entry, idx){
-            stack_long.push({
-              coord: [entry[0], entry[1]],
-              key: row.key,
-              index: row.index,
-              year: 2013 + idx
-            });
-            idx++
-          })
-        })
-        return stack_long;
-      }
-
-
-      // stack_wide.forEach(function(row){
-      //   var idx = 0
-      //   console.log(row.key);
-      //   row.forEach(function(entry, idx){
-      //     stack_long.push({
-      //       coord: [entry[0], entry[1]],
-      //       key: row.key,
-      //       index: row.index,
-      //       year: 2013 + idx
-      //     });
-      //     idx++
-      //   })
-      // })
       stack_long = longBubbles(stack_wide);
 
-      console.log(stack_long);
-      // add points for each
-
+      // add points/ bubbles for all head/ year combos
       svg.selectAll('circle')
             .data(stack_long)
             .enter()
             .append('circle')
             .attr('r', 2)
+            .attr('head', function(d){
+              return d['key']
+            })
             .attr('cx', function(d){
               return x(parseDate(d['year']));
             })
@@ -249,88 +262,92 @@
             })
             .attr('opacity', 0.6)
             .attr('class', function(d){
-              return d['year'];
+              return 'year' + d['year'];
             })
             .style('fill', 'grey');
 
+      // by defaut USER_HEAD is null, it changs to the actual head when one of the areas is clicked.
+      // becomes null agin once the whole area chart shows on the subsequent click
+      var USER_HEAD = null;
 
-    var USER_HEAD = null;
+      // function that activates interaction for bubbles
+      activateOverOut();
 
-           // Click layer.
-     svg.selectAll(".layer").on("click", function(d,i) {
+      // event listener for area clicks
+      svg.selectAll(".layer").on("click", function(d,i) {
          if (USER_HEAD === null) {
              USER_HEAD = d3.select(this).attr("id");
+             USER_HEAD_ = '"' + USER_HEAD + '"'
+             // raise the bubbles for selected head
+             d3.selectAll("circle[head = " + USER_HEAD_ + "]").raise();
+
+             // fade out legend
+             d3.select('g.legendOrdinal')
+                .transition('legendFade')
+                .duration(1000)
+                .style('opacity', 0)
          } else {
              USER_HEAD = null;
+
+             // fade in legend
+             d3.select('g.legendOrdinal')
+                .transition('legendFade')
+                .duration(1000)
+                .style('opacity', 1)
          }
-
+         // updates the area chart and bubbles accordingly
          update();
-     });
+      });
 
-     function update(){
+
+
+      function update(){
+
+        // empty array for updated data. Will add zeros to the heads not selected
         var upd_data = [];
-        //console.log(USER_HEAD);
+
         if (USER_HEAD != null){
-
-
-          var wide_show = wide.map(function(d){
-            d_copy = Object.assign({}, d)
-            for (i in d3.keys(d_copy)){
-              if (d3.keys(d_copy)[i] != "Year" && d3.keys(d_copy)[i] != USER_HEAD){
-                d_copy[d3.keys(d_copy)[i]] = 0;
-              }
-            }
-            return d_copy;
-          })
-
+          // update the data by adding zeros to inactive heads
+          var wide_show = wide_add_zeros(wide, USER_HEAD);
+          // stack the updated data
           upd_data = stack(wide_show);
-
+          // long format for bubbles
           var upd_long = longBubbles(upd_data);
-          // updating the domain
-          y.domain([0, d3.max(wide_show.map(function(d){
-            return d[USER_HEAD];
-          }))]);
+          // updating the domain (depending on head chosen)
+          y.domain([0, d3.max(wide_show.map((d) => d[USER_HEAD]))]);
 
+          // making transitions in the bubbles based on updated data
           d3.selectAll('circle')
             .data(upd_long)
-            .transition()
+            .transition('changePosTrans')
             .duration(1000)
-            .attr('cx', function(d){
-              return x(parseDate(d['year']));
-            })
-            .attr('cy', function(d){
-              return y(d['coord'][1]);
-            })
+            .attr('cx', (d) => x(parseDate(d['year'])))
+            .attr('cy', (d) => y(d['coord'][1]))
             .attr('r', 3)
-            .style('opacity', function(d){
-              return d['key'] != USER_HEAD ? 0 : 1
-            })
+            .style('opacity', (d) => (d['key'] != USER_HEAD ? 0 : 1))
 
         }
         else {
+          // if USER_HEAD is null, you use the default dataset without zeros
           upd_data = stack(wide);
           upd_long = longBubbles(upd_data);
+          // use the default domain in case USER_HEAD is null
           y.domain([0, maxDateVal])
 
+          // update the circles to default data
           d3.selectAll('circle')
             .data(upd_long)
-            .transition()
+            .transition('changePosTrans')
             .duration(1000)
-            .attr('cx', function(d){
-              return x(parseDate(d['year']));
-            })
-            .attr('cy', function(d){
-              return y(d['coord'][1]);
-            })
+            .attr('cx', (d) => x(parseDate(d['year'])))
+            .attr('cy', (d) => y(d['coord'][1]))
             .attr('r', 2)
             .style('opacity', '0.6')
-
         }
-        //console.log(upd_data);
 
         //transition in the area charts
 
-
+        // data update on paths/ areas
         d3.selectAll(".layer")
           .data(upd_data);
 
@@ -338,39 +355,137 @@
           .transition()
           .duration(1000)
           .attr("d", area)
-          .style("fill-opacity", function(d){
-            return USER_HEAD != null ? 0.5 : 0.85
-          })
+          .style("fill-opacity", (d) => USER_HEAD != null ? 0.5 : 0.85)
 
-
+        // update the axis on every update()
         svg.select(".y.axis")
           .transition()
           .duration(1000)
-          .call(yAxis);
+          .call(yAxisRight);
 
         svg.select(".y.axis.left")
           .transition()
           .duration(1000)
-          .call(yAxisLeft);
+          .call(yAxisLeft)
+      }
 
-        console.log(upd_long);
-        console.log(d3.selectAll('circle').data());
 
-        // d3.selectAll('circle')
-        //   .data(upd_long)
-        //   .transition()
-        //   .duration(1000)
-        //   .attr('cx', function(d){
-        //     return x(parseDate(d['year']));
-        //   })
-        //   .attr('cy', function(d){
-        //     return y(d['coord'][1]);
-        //   })
-        //   .attr('r', 3);
+      function activateOverOut(){
+       svg.selectAll('circle').on("mouseover",function(d, i){
+         class_name = d3.select(this).attr('class');
 
-     }
+         // get the selection with respect to value of USER_HEAD
+         var selection;
+         if (USER_HEAD == null){
+           // select all bubbles under a head
+           selection = d3.selectAll("." + class_name)
+         }
+         else{
+           if (d3.select(this).attr('head') == USER_HEAD){
+             selection = d3.select(this);
+           }
+           else {
+             // to get an empty selection for irrelevant heads
+             selection = d3.select("nobody");
+           }
+         }
 
-})
+         // highlight the selection
+         selection.transition('mouseOverTrans')
+                 .duration(100)
+                 .attr('r', (d) => USER_HEAD == null ? 3 : 4)
+                 .style('opacity', 0.8)
+                 .style('stroke', 'black')
+       })
+
+       svg.selectAll('circle').on("mouseout",function(d, i){
+         class_name = d3.select(this).attr('class');
+
+         // get the selection with respect to value of USER_HEAD
+         var selection;
+         if (USER_HEAD == null){
+           // select all bubbles under a head
+           selection = d3.selectAll("." + class_name)
+         }
+         else{
+           if (d3.select(this).attr('head') == USER_HEAD){
+             selection = d3.select(this);
+           }
+           else {
+             // to get an empty selection for irrelevant heads
+             selection = d3.select("nobody");
+           }
+         }
+
+         // return the selection to default setting (unhighlight)
+         selection.transition('mouseOverTrans')
+           .duration(100)
+           .attr('r', function(d){
+             return USER_HEAD == null ? 2 : 3
+           })
+           .style('opacity', function(d){
+             return 0.6;
+           })
+           .style('stroke', 'none');
+       })
+      }
+
+      // de-activate the mouseover and mouseout event listeners
+      function deactivateOverOut(){
+       svg.selectAll('circle').on('mouseover', null)
+                              .on('mouseout',null)
+      }
+
+      // labels for the heads of revenue (for the legend)
+      var revenue_labels = [
+       "Share in Federal divisible pool",
+       "Tax Revenue",
+       "Transfers under NFC award",
+       "Federal and Foreign Grants",
+       "Non-tax Revenue"
+      ]
+
+      // define the ordinal scale for legend
+      var ordinal = d3.scaleOrdinal(d3.schemeCategory20)
+                    .domain(revenue_labels)
+
+      var svg = d3.select("svg");
+
+      // group that will hold the legend
+      svg.select('g').append("g")
+        .attr("class", "legendOrdinal")
+        .attr("transform", "translate(20,10)");
+
+      var legendOrdinal = d3.legendColor()
+        //d3 symbol creates a path-string, for example
+        .shape("path", d3.symbol().type(d3.symbolCircle).size(80)())
+        .shapePadding(2)
+        .scale(ordinal);
+
+      // select the group and call the legendOrdinal function
+      svg.select(".legendOrdinal")
+        .call(legendOrdinal);
+
+      // mouseover event listener for paths
+      svg.selectAll('.layer').on('mouseover', function(d){
+        svg.select('.x.axis')
+        .append('text')
+        .classed('head_text', true)
+        .text(d.key)
+        .attr('transform', 'translate('+ width/2 + ', 50)')
+        .style('text-anchor', 'middle')
+        .style('font-family', 'sans-serif')
+        .style('font-size', '13px')
+        .transition("labelFade")
+        .duration(250)
+        .style('fill', 'black');
+      })
+      // mouseout event listener for paths
+      svg.selectAll('.layer').on('mouseout', function(d){
+        svg.select('.x.axis').select('.head_text').remove()
+
+      })
+    })
 
   </script>
 </body>
